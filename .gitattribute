@@ -6,4 +6,6 @@
 *.htm  text eol=lf
 *.html text eol=lf
 *.md   text eol=lf
+*.pdf -text
+*.png -text
 *.zip -text
