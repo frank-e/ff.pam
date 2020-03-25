@@ -76,6 +76,10 @@
       BUFF = TEST || substr( BUFF, BOFS + 1, ILEN )
       /* length( BUFF ) = SIZE = LE2U( BUFF, 3, 8 )               */
       /* LE2U( BUFF, 11, 4 ) = LE2U( BUFF, 15, 4 ) + 14           */
+      TEST = x2c( 89 ) || 'PNG' || x2c( 0D 0A 1A 0A )
+      if TEST == substr( BUFF, 15, 8 ) then  do
+         say 'PNG magic, no BMP' ;  return 0
+      end
    end
    else  if NICO <> ''  then  exit USAGE( 'no ICO in' FILE )
 
