@@ -33,17 +33,24 @@
    BUFF = charin( FILE, 1, SIZE )
    TEST = stream( FILE, 'c', 'close' )
 
-   if \ abbrev( BUFF, 'BM' )  then  do
-      if LE2U( BUFF, 1, 2 ) <> 0 | LE2U( BUFF, 3, 2 ) <> 1
-         then  exit USAGE( 'no BMP or ICO in' FILE )
-      ICON = LE2U( BUFF, 5, 2 )
-      if SIZE < 6 + 16 * ICON | ICON = 0
-         then  exit USAGE( 'no BMP or ICO in' FILE )
-      TEST = 'at most' ICON 'icons in' FILE
-      if NICO = ''            then  exit USAGE( TEST )
-      if NICO + 1 > ICON      then  exit USAGE( TEST )
-      OFFS = 6 + 16 * NICO + 1
-      say 'icon entry       :' RMAX( NICO ) XOFF( OFFS )
+   if abbrev( BUFF, 'BM' ) then  return INFO( SIZE, 0 )
+
+   if LE2U( BUFF, 1, 2 ) <> 0 | LE2U( BUFF, 3, 2 ) <> 1
+      then  exit USAGE( 'no BMP or ICO in' FILE )
+   ICON = LE2U( BUFF, 5, 2 )
+   if SIZE < 6 + 16 * ICON | ICON = 0
+      then  exit USAGE( 'no BMP or ICO in' FILE )
+
+   NBEG = 0                      ;  NEND = ICON - 1
+   if NICO <> ''  then  do
+      if NICO < NBEG | NEND < NICO
+         then  exit USAGE( 'at most' ICON 'icons in' FILE )
+      NBEG = NICO                ;  NEND = NICO
+   end
+
+   do N = NBEG to NEND
+      OFFS = 6 + 16 * N + 1
+      say 'icon entry       :' RMAX( N ) XOFF( OFFS )
       XICO = LE2U( BUFF, OFFS +  0, 1 )
       if XICO = 0    then  XICO = 256
       say 'icon width       :' RMAX( XICO )
@@ -59,7 +66,7 @@
       if CICO > 0 & BICO = 0
          then  exit ERROR( CICO '> 0' XOFF( OFFS + 2 ))
       TEST = '(computed)'
-      if CICO = 0 & BICO < 16 & 0 < BICO
+      if CICO = 0 & 0 < BICO & BICO < 16
          then  CICO = 2 ** BICO
          else  TEST = ''
       say 'palette entries  :' RMAX( CICO ) TEST
@@ -70,20 +77,23 @@
       if SIZE < TEST then  exit ERROR( SIZE '<' TEST )
       if BICO = 0    then  exit ERROR( 'icon is no bitmap' )
       OFFS = 14 + LE2U( BUFF, BOFS + 1, 4 ) + CICO * 4
-      TEST = 'BM'                ;  SIZE = ILEN + 14
-      TEST = TEST || reverse( d2c( SIZE, 8 ))
-      TEST = TEST || reverse( d2c( OFFS, 4 ))
-      BUFF = TEST || substr( BUFF, BOFS + 1, ILEN )
-      /* length( BUFF ) = SIZE = LE2U( BUFF, 3, 8 )               */
-      /* LE2U( BUFF, 11, 4 ) = LE2U( BUFF, 15, 4 ) + 14           */
+      LENG = ILEN + 14
+      FAKE = 'BM' || reverse( d2c( LENG, 8 ))
+      FAKE = FAKE || reverse( d2c( OFFS, 4 ))
+      FAKE = FAKE || substr( BUFF, BOFS + 1, ILEN )
       TEST = x2c( 89 ) || 'PNG' || x2c( 0D 0A 1A 0A )
-      if TEST == substr( BUFF, 15, 8 ) then  do
-         say 'PNG magic, no BMP' ;  return 0
+      if TEST == substr( FAKE, 15, 8 ) then  do
+         say 'PNG magic, no BMP' ;  if NICO <> ''  then  return 0
       end
+   end N
+   if NICO <> ''  then  do
+      BUFF = FAKE                ;  return INFO( LENG, 1 )
    end
-   else  if NICO <> ''  then  exit USAGE( 'no ICO in' FILE )
+   say 'For details specify the icon entry number'
+   return 0
 
-   SKIP = substr( BUFF, 1, 2 )
+INFO: procedure expose BUFF
+   parse arg SIZE, ICON          ;  SKIP = substr( BUFF, 1, 2 )
    TEST = LE2U( BUFF,  3, 8 )    ;  BOFS = LE2U( BUFF, 11, 4 )
    HLEN = LE2U( BUFF, 15, 4 )    ;  CLEN = BOFS - HLEN - 14
    if HLEN < 12 | CLEN < 0 | SIZE < BOFS | SKIP <> 'BM'
@@ -100,7 +110,7 @@
    BHDR = substr( BUFF, 15, HLEN )
    if OS22 <> '' | HLEN < 60
       then  CSID = 'Win '
-      else  CSID = reverse( substr( BHDR, 56 + 1, 4 ))
+      else  CSID = LE2C( BHDR, 56 + 1, 4 )
    select
       when  CSID = 'Win ' | CSID = 'sRGB' then  nop
       when  HLEN < 108  then  exit ERROR( 'BMP v4 broken CS' )
@@ -144,7 +154,7 @@
       otherwise   nop            /* BCNT and COMP combination ok. */
    end
 
-   if wordpos( COMP, 1 2 4 5 12 13 ) = 0 & NICO = ''  then  do
+   if wordpos( COMP, 1 2 4 5 12 13 ) = 0 & ICON = 0   then  do
       TEST = ( XLEN * BCNT + 31 ) % 32    /* 32 bits padding      */
       TEST = ( TEST * 4 ) * abs( YLEN )   /* cf. MS-WMF 2.2.2.9   */
       if BLEN = 0       then  BLEN = TEST
@@ -264,8 +274,9 @@
 RMAX: return right( arg( 1 ), 10 )
 XOFF: return '(' || d2x( arg( 1 ), 8 ) || ')'
 OMAX: return RMAX( arg( 1 )) XOFF( arg( 1 ))
-LE2U: return c2d( reverse( substr( arg(1), arg(2), arg(3))))
-LE2S: return c2d( reverse( substr( arg(1), arg(2), arg(3))), arg(3))
+LE2C: return reverse( substr( arg(1), arg(2), arg(3)))
+LE2U: return c2d( LE2C( arg(1), arg(2), arg(3)))
+LE2S: return c2d( LE2C( arg(1), arg(2), arg(3)), arg(3))
 
 /* ----------------------------- (REXX USAGE template 2016-03-06) */
 
